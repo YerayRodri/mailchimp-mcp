@@ -136,6 +136,39 @@ Turns thousands of individual API calls into one call + polling.
 }
 ```
 
+## Confirmation required for critical operations
+
+These tools require `confirmed=True`. Called without it, they return a JSON
+with `requires_confirmation: true` that the calling agent MUST show to the
+user and wait for a response before repeating the call with `confirmed=True`.
+They send something to a real audience or delete audience data.
+
+| Tool | What it does |
+|---|---|
+| `delete_campaign` | Delete a draft campaign |
+| `send_test_email` | Send a test email before the real send |
+| `send_campaign` | Send a campaign immediately to all its recipients |
+| `unschedule_campaign` | Cancel a scheduled send |
+| `remove_members_from_segment` | Remove emails from a static segment |
+| `delete_segment` | Delete a saved segment (doesn't delete the contacts) |
+
+```
+# 1. First call — no confirmed
+send_campaign(campaign_id="abc123")
+# → returns requires_confirmation: true → show it to the user
+
+# 2. Second call — after the user confirms
+send_campaign(campaign_id="abc123", confirmed=True)
+```
+
+## Security
+
+- Every tool carries MCP Tool Annotations (`readOnlyHint`, `destructiveHint`,
+  `idempotentHint`, `openWorldHint`) describing its effect up front.
+- Execution errors propagate as real MCP protocol errors (`isError=true`),
+  never as a JSON payload that looks successful with an `error` key buried
+  inside it.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

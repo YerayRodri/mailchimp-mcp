@@ -13,6 +13,7 @@ from typing import Any
 
 import requests
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 mcp = FastMCP("mailchimp")
 
@@ -77,9 +78,30 @@ def _build(**kwargs) -> dict:
     return {k: v for k, v in kwargs.items() if v is not None}
 
 
+def _confirm(action: str, detail: str, confirmed: bool) -> dict | None:
+    """
+    Guarda para operaciones de envío real o borrado irreversible.
+
+    Devuelve el aviso de confirmación si `confirmed` no es True (sin haber
+    hecho ninguna llamada a la API de Mailchimp todavía). Devuelve None si
+    `confirmed=True` y se puede proceder. Mismo patrón que `_confirm()` en
+    google-ads-write-mcp/gmail-mcp/holded-mcp — añadido 2026-08-30, ver
+    docs/APIS.md: hasta entonces ninguna operación de Mailchimp tenía freno
+    técnico propio.
+    """
+    if confirmed:
+        return None
+    return {
+        "requires_confirmation": True,
+        "warning": f"Acción sobre audiencia/campaña real: {action}. {detail}",
+        "instruction": "Muestra este aviso al usuario y pide confirmación explícita. "
+                       "Solo repite la llamada con confirmed=True si el usuario confirma.",
+    }
+
+
 # ── AUDIENCIA ─────────────────────────────────────────────────────────────────
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def get_lists(count: int = 10, offset: int = 0) -> dict:
     """Lista todas las audiencias (listas) con sus estadísticas: total suscriptores, tasa de apertura media, etc."""
     return _get(
@@ -90,7 +112,7 @@ def get_lists(count: int = 10, offset: int = 0) -> dict:
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def get_list_members(
     list_id: str,
     status: str = "subscribed",
@@ -113,13 +135,13 @@ def get_list_members(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def get_member(list_id: str, email: str) -> dict:
     """Obtiene todos los datos de un contacto por email: estado, tags, merge fields, fecha de suscripción."""
     return _get(f"/lists/{list_id}/members/{_h(email)}")
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True))
 def upsert_member(
     list_id: str,
     email: str,
@@ -155,19 +177,19 @@ def upsert_member(
     return _put(f"/lists/{list_id}/members/{_h(email)}", body)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True))
 def archive_member(list_id: str, email: str) -> dict:
     """Archiva (desuscribe) un contacto. No es borrado permanente — se puede restaurar."""
     return _delete(f"/lists/{list_id}/members/{_h(email)}")
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def search_members(query: str, list_id: str | None = None) -> dict:
     """Busca contactos por email, nombre o teléfono en todas las audiencias o solo en una."""
     return _get("/search-members", query=query, list_id=list_id)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def get_member_activity(list_id: str, email: str) -> dict:
     """Últimos 50 eventos de un contacto: aperturas, clics, bajas, rebotes, envíos."""
     return _get(f"/lists/{list_id}/members/{_h(email)}/activity")
@@ -175,13 +197,13 @@ def get_member_activity(list_id: str, email: str) -> dict:
 
 # ── TAGS ──────────────────────────────────────────────────────────────────────
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def get_tags(list_id: str, name: str | None = None) -> dict:
     """Lista todos los tags de una audiencia. Opcionalmente filtra por nombre parcial."""
     return _get(f"/lists/{list_id}/tag-search", name=name)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def update_member_tags(list_id: str, email: str, tags: list[dict]) -> dict:
     """
     Añade o elimina tags de un contacto existente.
@@ -201,13 +223,13 @@ def update_member_tags(list_id: str, email: str, tags: list[dict]) -> dict:
 
 # ── MERGE FIELDS ──────────────────────────────────────────────────────────────
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def get_merge_fields(list_id: str) -> dict:
     """Lista todos los campos personalizados de una audiencia: FNAME, LNAME, PHONE, CIUDAD, BIRTHDAY..."""
     return _get(f"/lists/{list_id}/merge-fields")
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True))
 def create_merge_field(
     list_id: str,
     name: str,
@@ -227,7 +249,7 @@ def create_merge_field(
 
 # ── SEGMENTOS ─────────────────────────────────────────────────────────────────
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def get_segments(list_id: str, type: str | None = None, count: int = 50) -> dict:
     """
     Lista los segmentos guardados de una audiencia con sus IDs (necesarios para crear campañas segmentadas).
@@ -237,7 +259,7 @@ def get_segments(list_id: str, type: str | None = None, count: int = 50) -> dict
     return _get(f"/lists/{list_id}/segments", type=type, count=count)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True))
 def create_segment(
     list_id: str,
     name: str,
@@ -263,7 +285,7 @@ def create_segment(
 
 # ── BATCH ─────────────────────────────────────────────────────────────────────
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True))
 def batch_upsert_members(list_id: str, members: list[dict]) -> dict:
     """
     Crea o actualiza múltiples contactos en una sola llamada API (mucho más rápido que llamadas individuales).
@@ -306,7 +328,7 @@ def batch_upsert_members(list_id: str, members: list[dict]) -> dict:
     return _post("/batches", {"operations": operations})
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def get_batch_status(batch_id: str) -> dict:
     """
     Comprueba el estado de una operación batch.
@@ -317,7 +339,7 @@ def get_batch_status(batch_id: str) -> dict:
 
 # ── CAMPAÑAS ──────────────────────────────────────────────────────────────────
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def get_campaigns(
     status: str | None = None,
     type: str = "regular",
@@ -341,13 +363,13 @@ def get_campaigns(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def get_campaign(campaign_id: str) -> dict:
     """Obtiene todos los detalles de una campaña: settings, segmento destinatario, estado y estadísticas."""
     return _get(f"/campaigns/{campaign_id}")
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True))
 def create_campaign(
     list_id: str,
     subject_line: str,
@@ -380,7 +402,7 @@ def create_campaign(
     return _post("/campaigns", {"type": type, "settings": settings, "recipients": recipients})
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def update_campaign(
     campaign_id: str,
     subject_line: str | None = None,
@@ -416,7 +438,7 @@ def update_campaign(
     return _patch(f"/campaigns/{campaign_id}", body)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True))
 def replicate_campaign(campaign_id: str) -> dict:
     """
     Duplica una campaña (en estado saved o sent). El duplicado queda en borrador con los mismos settings y contenido.
@@ -425,21 +447,24 @@ def replicate_campaign(campaign_id: str) -> dict:
     return _post(f"/campaigns/{campaign_id}/actions/replicate")
 
 
-@mcp.tool()
-def delete_campaign(campaign_id: str) -> dict:
-    """Elimina una campaña en borrador. Las campañas ya enviadas no se pueden eliminar."""
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=True))
+def delete_campaign(campaign_id: str, confirmed: bool = False) -> dict:
+    """Elimina una campaña en borrador. Las campañas ya enviadas no se pueden eliminar. Requiere confirmed=True."""
+    aviso = _confirm("eliminar campaña", f"campaign_id={campaign_id}", confirmed)
+    if aviso:
+        return aviso
     return _delete(f"/campaigns/{campaign_id}")
 
 
 # ── CONTENIDO Y DISEÑO ────────────────────────────────────────────────────────
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def get_campaign_content(campaign_id: str) -> dict:
     """Obtiene el HTML y texto plano actuales de una campaña."""
     return _get(f"/campaigns/{campaign_id}/content")
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def set_campaign_content(
     campaign_id: str,
     html: str | None = None,
@@ -463,24 +488,29 @@ def set_campaign_content(
     return _put(f"/campaigns/{campaign_id}/content", body)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=True))
 def send_test_email(
     campaign_id: str,
     test_emails: list[str],
     send_type: str = "html",
+    confirmed: bool = False,
 ) -> dict:
     """
-    Envía un email de prueba para revisar el diseño antes del envío real.
+    Envía un email de prueba para revisar el diseño antes del envío real. Requiere confirmed=True.
     send_type: html | plaintext
     Usar siempre para verificar el rendering antes de send_campaign.
     """
+    aviso = _confirm("enviar email de prueba",
+                      f"campaign_id={campaign_id}, destinatarios={test_emails}", confirmed)
+    if aviso:
+        return aviso
     return _post(
         f"/campaigns/{campaign_id}/actions/test",
         {"test_emails": test_emails, "send_type": send_type},
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def get_send_checklist(campaign_id: str) -> dict:
     """
     Revisa todos los requisitos antes de enviar: asunto, contenido, from email, lista, enlaces de baja, etc.
@@ -492,16 +522,20 @@ def get_send_checklist(campaign_id: str) -> dict:
 
 # ── ENVÍO ─────────────────────────────────────────────────────────────────────
 
-@mcp.tool()
-def send_campaign(campaign_id: str) -> dict:
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=True))
+def send_campaign(campaign_id: str, confirmed: bool = False) -> dict:
     """
-    Envía una campaña inmediatamente a todos sus destinatarios.
+    Envía una campaña inmediatamente a todos sus destinatarios. Requiere confirmed=True.
     Verificar con get_send_checklist antes de llamar a esta herramienta.
     """
+    aviso = _confirm("enviar campaña real a todos los destinatarios",
+                      f"campaign_id={campaign_id}", confirmed)
+    if aviso:
+        return aviso
     return _post(f"/campaigns/{campaign_id}/actions/send")
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True))
 def schedule_campaign(
     campaign_id: str,
     schedule_time: str,
@@ -517,13 +551,16 @@ def schedule_campaign(
     )
 
 
-@mcp.tool()
-def unschedule_campaign(campaign_id: str) -> dict:
-    """Cancela la programación de una campaña para poder editarla de nuevo."""
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=True))
+def unschedule_campaign(campaign_id: str, confirmed: bool = False) -> dict:
+    """Cancela la programación de una campaña para poder editarla de nuevo. Requiere confirmed=True."""
+    aviso = _confirm("cancelar la programación de una campaña", f"campaign_id={campaign_id}", confirmed)
+    if aviso:
+        return aviso
     return _post(f"/campaigns/{campaign_id}/actions/unschedule")
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True))
 def create_resend(campaign_id: str) -> dict:
     """
     Crea una campaña de reenvío dirigida a los suscriptores que no abrieron el email original.
@@ -535,7 +572,7 @@ def create_resend(campaign_id: str) -> dict:
 
 # ── TEMPLATES ─────────────────────────────────────────────────────────────────
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def get_templates(count: int = 20, type: str | None = None) -> dict:
     """
     Lista los templates disponibles en la cuenta.
@@ -549,7 +586,7 @@ def get_templates(count: int = 20, type: str | None = None) -> dict:
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True))
 def create_template(name: str, html: str, folder_id: str | None = None) -> dict:
     """
     Crea un template reutilizable a partir de HTML.
@@ -560,7 +597,7 @@ def create_template(name: str, html: str, folder_id: str | None = None) -> dict:
     return _post("/templates", body)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def update_template(
     template_id: int,
     name: str | None = None,
@@ -573,21 +610,22 @@ def update_template(
 
 # ── REPORTING ─────────────────────────────────────────────────────────────────
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def get_campaign_report(campaign_id: str) -> dict:
     """
     Informe completo de una campaña enviada: aperturas, clics, bajas, rebotes, spam reports.
+    Benchmarks PTX: tasa apertura >25% | tasa clic >3% | bajas <0.2%
     """
     return _get(f"/reports/{campaign_id}")
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def get_campaign_advice(campaign_id: str) -> dict:
     """Consejos automáticos de Mailchimp basados en las métricas de la campaña (aperturas, clics, bajas...)."""
     return _get(f"/reports/{campaign_id}/advice")
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def get_campaign_click_details(campaign_id: str) -> dict:
     """Detalle de clics por URL: qué links se hicieron clic, cuántas veces y cuántos suscriptores únicos."""
     return _get(f"/reports/{campaign_id}/click-details")
@@ -595,7 +633,7 @@ def get_campaign_click_details(campaign_id: str) -> dict:
 
 # ── GESTIÓN DE SEGMENTOS ESTÁTICOS ───────────────────────────────────────────
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True))
 def add_members_to_segment(list_id: str, segment_id: int, emails: list[str]) -> dict:
     """
     Añade emails a un segmento estático existente.
@@ -610,13 +648,17 @@ def add_members_to_segment(list_id: str, segment_id: int, emails: list[str]) -> 
     )
 
 
-@mcp.tool()
-def remove_members_from_segment(list_id: str, segment_id: int, emails: list[str]) -> dict:
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=True))
+def remove_members_from_segment(list_id: str, segment_id: int, emails: list[str], confirmed: bool = False) -> dict:
     """
-    Elimina emails de un segmento estático existente.
+    Elimina emails de un segmento estático existente. Requiere confirmed=True.
 
     emails: lista de direcciones de email a eliminar del segmento.
     """
+    aviso = _confirm("eliminar miembros de un segmento",
+                      f"list_id={list_id}, segment_id={segment_id}, emails={emails}", confirmed)
+    if aviso:
+        return aviso
     members_to_remove = [e.strip().lower() for e in emails]
     return _post(
         f"/lists/{list_id}/segments/{segment_id}",
@@ -624,15 +666,18 @@ def remove_members_from_segment(list_id: str, segment_id: int, emails: list[str]
     )
 
 
-@mcp.tool()
-def delete_segment(list_id: str, segment_id: int) -> dict:
-    """Elimina un segmento guardado. No elimina los contactos, solo el segmento."""
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=True))
+def delete_segment(list_id: str, segment_id: int, confirmed: bool = False) -> dict:
+    """Elimina un segmento guardado. No elimina los contactos, solo el segmento. Requiere confirmed=True."""
+    aviso = _confirm("eliminar segmento", f"list_id={list_id}, segment_id={segment_id}", confirmed)
+    if aviso:
+        return aviso
     return _delete(f"/lists/{list_id}/segments/{segment_id}")
 
 
 # ── REPORTING AVANZADO ────────────────────────────────────────────────────────
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def get_campaign_open_details(
     campaign_id: str,
     count: int = 100,
@@ -652,7 +697,7 @@ def get_campaign_open_details(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True))
 def get_campaign_unsubscribes(campaign_id: str, count: int = 50, offset: int = 0) -> dict:
     """
     Lista los contactos que se dieron de baja tras esta campaña.
