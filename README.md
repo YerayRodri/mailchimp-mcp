@@ -161,6 +161,10 @@ send_campaign(campaign_id="abc123")
 send_campaign(campaign_id="abc123", confirmed=True)
 ```
 
+## Response size
+
+Endpoints without an explicit `fields=` restriction stripped Mailchimp's HATEOAS `_links` array (a list of REST hyperlinks nothing here ever follows) — measured 49-68% smaller on real data. Endpoints that already use `fields=` were untouched, since Mailchimp already omits `_links` when you don't request it.
+
 ## Security
 
 - Every tool carries MCP Tool Annotations (`readOnlyHint`, `destructiveHint`,

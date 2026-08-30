@@ -32,32 +32,50 @@ def _params(**kwargs) -> dict:
     return {k: v for k, v in kwargs.items() if v is not None}
 
 
+def _strip_links(obj: Any) -> Any:
+    """
+    Quita las claves `_links` (metadata HATEOAS de la API de Mailchimp: enlaces REST
+    self/parent/update/delete/... que ninguna tool usa nunca, ya que el acceso es siempre
+    vía estas tools, no navegando la API a mano). Verificado en vivo 2026-08-30 (ver
+    docs/APIS.md): en get_member eran ~1500 de los ~2300 caracteres totales, en get_campaign
+    ~1400 de ~2100. Los endpoints que ya restringen con `fields=` (get_lists,
+    get_list_members, get_campaigns, get_templates, get_campaign_open_details,
+    get_campaign_unsubscribes) ni siquiera piden `_links`, así que esto no les afecta —
+    cubre los ~16 endpoints que no tienen ese parámetro.
+    """
+    if isinstance(obj, dict):
+        return {k: _strip_links(v) for k, v in obj.items() if k != "_links"}
+    if isinstance(obj, list):
+        return [_strip_links(v) for v in obj]
+    return obj
+
+
 def _get(path: str, **kwargs) -> Any:
     base, auth = _setup()
     r = requests.get(f"{base}{path}", auth=auth, params=_params(**kwargs), timeout=30)
     r.raise_for_status()
-    return r.json()
+    return _strip_links(r.json())
 
 
 def _post(path: str, body: dict | None = None) -> Any:
     base, auth = _setup()
     r = requests.post(f"{base}{path}", auth=auth, json=body or {}, timeout=60)
     r.raise_for_status()
-    return r.json() if r.content else {"status": "ok"}
+    return _strip_links(r.json()) if r.content else {"status": "ok"}
 
 
 def _patch(path: str, body: dict) -> Any:
     base, auth = _setup()
     r = requests.patch(f"{base}{path}", auth=auth, json=body, timeout=30)
     r.raise_for_status()
-    return r.json() if r.content else {"status": "ok"}
+    return _strip_links(r.json()) if r.content else {"status": "ok"}
 
 
 def _put(path: str, body: dict) -> Any:
     base, auth = _setup()
     r = requests.put(f"{base}{path}", auth=auth, json=body, timeout=30)
     r.raise_for_status()
-    return r.json() if r.content else {"status": "ok"}
+    return _strip_links(r.json()) if r.content else {"status": "ok"}
 
 
 def _delete(path: str) -> dict:
@@ -66,7 +84,7 @@ def _delete(path: str) -> dict:
     if r.status_code == 204 or not r.content:
         return {"status": "deleted"}
     r.raise_for_status()
-    return r.json()
+    return _strip_links(r.json())
 
 
 def _h(email: str) -> str:
